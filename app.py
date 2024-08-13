@@ -1,31 +1,38 @@
 import sqlite3
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from Globals import DATABASE_NAME
 
+DATABASE_NAME = "controlestoque.sqlite"
 
 app = Flask(__name__)
 
 
 def get_db_connection():
-    conn = None
-    try:
-        conn = sqlite3.connect(DATABASE_NAME)
-        conn.row_factory = sqlite3.Row
-    except sqlite3.Error as e:
-        print('Não foi possível conectar')
+    #Aqui, cria uma conexão com o banco de dados SQLite.
+    db = getattr(g, "_database", None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE_NAME)
+    return db
 
-    return conn
-
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, "_database", None)
+    if db is not None:
+        db.close()
 
 @app.route("/")
 def index():
+    #Essa é a rota raiz que retorna a versão da API.
     return (jsonify({"versao": 1}), 200)
 
 
-def getUsuarios():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    resultset = cursor.execute('SELECT * FROM tb_usuario').fetchall()
+def get_usuarios():
+    #O get recupera todos os usuários do banco de dados.
+
+    cur = get_db_connection().cursor()
+    #conn = get_db_connection()
+    #cursor = conn.cursor()
+    resultset = cur.execute('SELECT * FROM tb_usuario').fetchall()
     usuarios = []
     for linha in resultset:
         id = linha[0]
@@ -38,41 +45,46 @@ def getUsuarios():
             "nascimento": nascimento
         }
         usuarios.append(usuarioDict)
-    conn.close()
+    cur.close()
+    #conn.close()
     return usuarios
 
 
-def setUsuario(data):
+def set_usuario(data):
+    #O set faz a inserçãode um novo usuário no banco de dados.
     # Criação do usuário.
     nome = data.get('nome')
     nascimento = data.get('nascimento')
     # Persistir os dados no banco.
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
+    cur = get_db_connection().cursor()
+    #conn = get_db_connection()
+    #cursor = conn.cursor()
+    cur.execute(
         f'INSERT INTO tb_usuario(nome, nascimento) values ("{nome}", "{nascimento}")')
-    conn.commit()
-    id = cursor.lastrowid
+    cur.commit()
+    id = cur.lastrowid
     data['id'] = id
-    conn.close()
+    cur.close()
     # Retornar o usuário criado.
     return data
 
 
 @app.route("/usuarios", methods=['GET', 'POST'])
 def usuarios():
+    #Aqui é a rota para listar ou criar usuários.
     if request.method == 'GET':
         # Listagem dos usuários
-        usuarios = getUsuarios()
+        usuarios = get_usuarios()
         return jsonify(usuarios), 200
     elif request.method == 'POST':
         # Recuperar dados da requisição: json.
         data = request.json
-        data = setUsuario(data)
+        data = set_usuario(data)
         return jsonify(data), 201
 
 
-def getUsuarioById(id):
+def get_usuario_by_id(id):
+    # Esse get recupera um usuário pelo ID.
     usuarioDict = None
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -92,7 +104,8 @@ def getUsuarioById(id):
     return usuarioDict
 
 
-def updateUsuario(id, data):
+def update_usuario(id, data):
+    # O update atualiza as informações de um usuário pelo ID.
     # Criação do usuário.
     nome = data.get('nome')
     nascimento = data.get('nascimento')
@@ -113,8 +126,9 @@ def updateUsuario(id, data):
 
 @app.route("/usuarios/<int:id>", methods=['GET', 'DELETE', 'PUT'])
 def usuario(id):
+    #Essa rota é para pegar, deletar ou atualizar um usuário pelo ID.
     if request.method == 'GET':
-        usuario = getUsuarioById(id)
+        usuario = get_usuario_by_id(id)
         if usuario is not None:
             return jsonify(usuario), 200
         else:
@@ -122,7 +136,7 @@ def usuario(id):
     elif request.method == 'PUT':
         # Recuperar dados da requisição: json.
         data = request.json
-        rowupdate = updateUsuario(id, data)
+        rowupdate = update_usuario(id, data)
         if rowupdate != 0:
             return (data, 201)
         else:
